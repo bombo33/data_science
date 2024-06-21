@@ -1,0 +1,2 @@
+feed_publisher_name,feed_publisher_url,feed_lang,feed_start_date,feed_end_date
+FlixMobility Tech GmbH,http://global.flixbus.com,en,20240603,20241202

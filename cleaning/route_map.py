@@ -1,79 +1,122 @@
-import os
-
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
-import folium
-from folium.plugins import MarkerCluster
+from datetime import timedelta, datetime
+import streamlit as st
+import plotly.express as px
+import plotly.graph_objects as go
 
+def parse_time(time_str):
+    """Parse a time string in the format HH:MM:SS to a datetime object, handling hours > 23."""
+    hours, minutes, seconds = map(int, time_str.split(':'))
+    if hours >= 24:
+        days, hours = divmod(hours, 24)
+        return datetime.strptime(f'{hours:02}:{minutes:02}:{seconds:02}', '%H:%M:%S') + timedelta(days=days)
+    else:
+        return datetime.strptime(time_str, '%H:%M:%S')
 
 # Load the data
-stops = pd.read_csv('/home/anatol/Documents/2023_24_2/DS/gtfs_generic_eu/stops.txt')
-routes = pd.read_csv('/home/anatol/Documents/2023_24_2/DS/gtfs_generic_eu/routes.txt')
-trips = pd.read_csv('/home/anatol/Documents/2023_24_2/DS/gtfs_generic_eu/trips.txt')
-stop_times = pd.read_csv('/home/anatol/Documents/2023_24_2/DS/gtfs_generic_eu/stop_times.txt')
-calendar = pd.read_csv('/home/anatol/Documents/2023_24_2/DS/gtfs_generic_eu/calendar.txt')
+stops_df = pd.read_csv('/home/anatol/Documents/2023_24_2/DS/gtfs_generic_eu/stops.txt')
+routes_df = pd.read_csv('/home/anatol/Documents/2023_24_2/DS/gtfs_generic_eu/routes.txt')
+trips_df = pd.read_csv('/home/anatol/Documents/2023_24_2/DS/gtfs_generic_eu/trips.txt')
+stop_times_df = pd.read_csv('/home/anatol/Documents/2023_24_2/DS/gtfs_generic_eu/stop_times.txt')
+calendar_df = pd.read_csv('/home/anatol/Documents/2023_24_2/DS/gtfs_generic_eu/calendar.txt')
+transfers_df = pd.read_csv('/home/anatol/Documents/2023_24_2/DS/gtfs_generic_eu/transfers.txt')
 
-# Function to normalize times over 24 hours without losing trip length
-def normalize_time(t):
-    if pd.isna(t):
-        return t
-    h, m, s = map(int, t.split(':'))
-    return pd.Timedelta(hours=h, minutes=m, seconds=s)
+# Parse arrival and departure times correctly
+stop_times_df['arrival_time'] = stop_times_df['arrival_time'].apply(parse_time)
+stop_times_df['departure_time'] = stop_times_df['departure_time'].apply(parse_time)
 
-# Apply normalization to times
-stop_times['arrival_time'] = stop_times['arrival_time'].apply(normalize_time)
-stop_times['departure_time'] = stop_times['departure_time'].apply(normalize_time)
 
-# Ensure trip IDs are correctly sorted by stop_sequence to aggregate segments
-stop_times = stop_times.sort_values(by=['trip_id', 'stop_sequence'])
+# Calculate trip durations and filter trips based on constraints
+def calculate_trip_durations(max_time, max_changes, start_time):
+    trip_durations = stop_times_df.groupby('trip_id').agg(
+        {'arrival_time': 'max', 'departure_time': 'min'}).reset_index()
+    trip_durations['duration'] = trip_durations['arrival_time'] - trip_durations['departure_time']
+    trip_durations = trip_durations[trip_durations['duration'] < timedelta(hours=max_time)]
 
-# Calculate trip durations by aggregating segments
-stop_times['trip_start'] = stop_times.groupby('trip_id')['departure_time'].transform('first')
-stop_times['trip_end'] = stop_times.groupby('trip_id')['arrival_time'].transform('last')
+    # Create a datetime object for the travel time using a default date
+    start_datetime = datetime.combine(datetime.today(), start_time)
 
-stop_times['trip_duration'] = (stop_times['trip_end'] - stop_times['trip_start']).dt.total_seconds() / 60
+    # Filter trips based on the start time
+    trip_durations = trip_durations[
+        (stop_times_df['departure_time'] >= start_datetime) &
+        (stop_times_df['departure_time'] < start_datetime + timedelta(hours=1))
+        ]
 
-# Handle trips spanning multiple days
-stop_times['trip_duration'] = stop_times['trip_duration'].apply(lambda x: x if x >= 0 else x + 1440)
+    return trip_durations
 
-# Remove unrealistic durations (assuming max 48 hours)
-stop_times = stop_times[(stop_times['trip_duration'] >= 0) & (stop_times['trip_duration'] <= 2880)]
 
-# Drop duplicate rows to keep only unique trip durations
-unique_trip_durations = stop_times.drop_duplicates(subset=['trip_id', 'trip_duration'])
+# Streamlit UI
+st.title('FlixBus Data Visualization')
 
-# Filter routes under a certain duration (e.g., 60 minutes)
-max_duration = 60
-short_duration_routes = unique_trip_durations[unique_trip_durations['trip_duration'] <= max_duration]
+# Tabs for different visualizations
+tabs = st.tabs(['Reachable Destinations', 'Service Heatmap', 'Bus Frequency'])
 
-# Merge short duration trips with routes and trips data
-short_duration_routes = short_duration_routes.merge(trips, on='trip_id').merge(routes, on='route_id')
+with tabs[0]:
+    st.subheader('Reachable Destinations')
+    start_stop = st.selectbox('Select Start Stop', stops_df['stop_name'].unique())
+    max_time = st.slider('Maximum Travel Time (hours)', 1, 12, 4)
+    max_changes = st.slider('Maximum Changes', 0, 3, 1)
+    travel_time = st.time_input('Preferred Travel Time', value=datetime.now().time())
 
-# Get the list of relevant trip IDs and their corresponding stop_times
-relevant_trip_ids = short_duration_routes['trip_id'].unique()
-relevant_stop_times = stop_times[stop_times['trip_id'].isin(relevant_trip_ids)]
+    if st.button('Show Reachable Destinations'):
+        start_stop_ids = stops_df[stops_df['stop_name'].str.contains(start_stop, case=False, na=False)][
+            'stop_id'].tolist()
 
-# Merge stop times with stops to get geographic coordinates
-relevant_stop_times = relevant_stop_times.merge(stops, on='stop_id')
+        if start_stop_ids:
+            trip_durations = calculate_trip_durations(max_time, max_changes, travel_time)
+            reachable_stops = stop_times_df[stop_times_df['trip_id'].isin(trip_durations['trip_id'])]
+            reachable_coords = stops_df[stops_df['stop_id'].isin(reachable_stops['stop_id'])]
 
-# Initialize a map centered around a general location (e.g., Europe)
-map_center = [50.1109, 8.6821]  # Coordinates for Frankfurt, Germany
-m = folium.Map(location=map_center, zoom_start=6)
+            # Map visualization
+            fig = px.scatter_mapbox(
+                reachable_coords,
+                lat="stop_lat",
+                lon="stop_lon",
+                text="stop_name",
+                zoom=10,
+                height=600
+            )
+            fig.update_layout(mapbox_style="open-street-map")
+            st.plotly_chart(fig)
 
-# Add routes to the map
-for trip_id in relevant_trip_ids:
-    trip_stops = relevant_stop_times[relevant_stop_times['trip_id'] == trip_id]
-    trip_coordinates = list(zip(trip_stops['stop_lat'], trip_stops['stop_lon']))
-    folium.PolyLine(trip_coordinates, color='blue', weight=2.5, opacity=1).add_to(m)
+            # List of trips
+            reachable_stops_details = reachable_stops.merge(stops_df, on='stop_id')
+            st.write(reachable_stops_details[['stop_name', 'arrival_time', 'departure_time']])
+        else:
+            st.write('No reachable destinations found.')
 
-# Add stops to the map with a marker cluster
-marker_cluster = MarkerCluster().add_to(m)
-for idx, stop in stops.iterrows():
-    folium.Marker(location=[stop['stop_lat'], stop['stop_lon']], popup=stop['stop_name']).add_to(marker_cluster)
+with tabs[1]:
+    st.subheader('Service Heatmap')
+    # Aggregate data for heatmap
+    stop_times_df['hour'] = stop_times_df['arrival_time'].dt.hour
+    stop_frequency = stop_times_df.groupby('stop_id').size().reset_index(name='count')
+    stop_data = stop_frequency.merge(stops_df, on='stop_id')
 
-# Save the map to an HTML file
-output_dir = '/home/anatol/Documents/2023_24_2/DS/data'
-output_file = 'filtered_routes_map.html'
-os.makedirs(output_dir, exist_ok=True)  # Create the directory if it doesn't exist
-m.save(os.path.join(output_dir, output_file))
+    # Generate heatmap
+    fig = px.density_mapbox(
+        stop_data,
+        lat='stop_lat',
+        lon='stop_lon',
+        z='count',
+        radius=10,
+        center=dict(lat=stop_data['stop_lat'].mean(), lon=stop_data['stop_lon'].mean()),
+        zoom=5,
+        mapbox_style='stamen-terrain'
+    )
+    st.plotly_chart(fig)
+
+with tabs[2]:
+    st.subheader('Bus Frequency at a Stop')
+    stop_name = st.selectbox('Select Stop', stops_df['stop_name'].unique())
+
+    if st.button('Show Frequency'):
+        selected_stop_id = \
+        stops_df[stops_df['stop_name'].str.contains(stop_name, case=False, na=False)]['stop_id'].values[0]
+        stop_frequency = stop_times_df[stop_times_df['stop_id'] == selected_stop_id].groupby(
+            stop_times_df['arrival_time'].dt.hour).size().reset_index(name='count')
+
+        fig = px.bar(stop_frequency, x='arrival_time', y='count',
+                     labels={'arrival_time': 'Hour of Day', 'count': 'Number of Buses'})
+        st.plotly_chart(fig)
+
