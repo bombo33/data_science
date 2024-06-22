@@ -1,3 +1,5 @@
+import os
+
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
@@ -5,12 +7,22 @@ import folium
 from folium.plugins import MarkerCluster
 
 
+# Set base directory
+base_dir = os.path.dirname(os.path.abspath(__file__))
+
+# Construct file paths
+stops_path = os.path.join(base_dir, 'gtfs', 'stops.txt')
+stop_times_path = os.path.join(base_dir, 'gtfs', 'stop_times.txt')
+routes_path = os.path.join(base_dir, 'gtfs', 'routes.txt')
+trips_path = os.path.join(base_dir, 'gtfs', 'trips.txt')
+calendar_path = os.path.join(base_dir, 'gtfs', 'calendar.txt')
+
 # Load the data
-stops = pd.read_csv('/home/anatol/Documents/2023_24_2/DS/gtfs_generic_eu/stops.txt')
-routes = pd.read_csv('/home/anatol/Documents/2023_24_2/DS/gtfs_generic_eu/routes.txt')
-trips = pd.read_csv('/home/anatol/Documents/2023_24_2/DS/gtfs_generic_eu/trips.txt')
-stop_times = pd.read_csv('/home/anatol/Documents/2023_24_2/DS/gtfs_generic_eu/stop_times.txt')
-calendar = pd.read_csv('/home/anatol/Documents/2023_24_2/DS/gtfs_generic_eu/calendar.txt')
+stops = pd.read_csv(stops_path)
+routes = pd.read_csv(routes_path)
+trips = pd.read_csv(trips_path)
+stop_times = pd.read_csv(stop_times_path)
+calendar = pd.read_csv(calendar_path)
 
 # Function to normalize times over 24 hours
 def normalize_time(t):
