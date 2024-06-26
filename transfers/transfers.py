@@ -85,14 +85,15 @@ def find_second_level_reachable_destinations(direct_reachable_stops_info, time_l
         reachable_from_stop = find_directly_reachable_destinations_with_times(city_name,
                                                                               time_limit - additional_travel_time)
 
-        # Adjust travel times to include the initial travel time
-        reachable_from_stop['travel_time'] = reachable_from_stop['travel_time'].apply(
-            lambda x: x + additional_travel_time if pd.notnull(x) else x)
+        if not reachable_from_stop.empty:
+            # Adjust travel times to include the initial travel time
+            reachable_from_stop['travel_time'] = reachable_from_stop['travel_time'].apply(
+                lambda x: x + additional_travel_time if pd.notnull(x) else x)
 
-        # Exclude cities that are already directly reachable from the starting city
-        reachable_from_stop = reachable_from_stop[
-            ~reachable_from_stop['stop_id'].isin(direct_reachable_stops_info['stop_id'])]
-        second_level_destinations = pd.concat([second_level_destinations, reachable_from_stop])
+            # Exclude cities that are already directly reachable from the starting city
+            reachable_from_stop = reachable_from_stop[
+                ~reachable_from_stop['stop_id'].isin(direct_reachable_stops_info['stop_id'])]
+            second_level_destinations = pd.concat([second_level_destinations, reachable_from_stop])
 
     return second_level_destinations
 
