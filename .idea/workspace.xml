@@ -4,12 +4,11 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="44e0abe7-86a9-40bf-bd55-2e9f3bb343eb" name="Changes" comment="Basic heatmap done, pushed for review">
+    <list default="true" id="44e0abe7-86a9-40bf-bd55-2e9f3bb343eb" name="Changes" comment="Destinations, calculating time is shit">
       <change beforePath="$PROJECT_DIR$/.idea/FlixBusProject.iml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/FlixBusProject.iml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/misc.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/misc.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/cleaning/base_cleaning.py" beforeDir="false" afterPath="$PROJECT_DIR$/cleaning/base_cleaning.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/cleaning/heatmap.py" beforeDir="false" afterPath="$PROJECT_DIR$/cleaning/heatmap.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/transfers/transfers.py" beforeDir="false" afterPath="$PROJECT_DIR$/transfers/transfers.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -49,8 +48,8 @@
 }</component>
   <component name="GitLabMergeRequestsSettings">{
   &quot;selectedUrlAndAccountId&quot;: {
-    &quot;first&quot;: &quot;https://gitlab.informatik.uni-bremen.de/anatolb1/ds_2024&quot;,
-    &quot;second&quot;: &quot;0cde43b7-97ad-4073-800d-0df4665c0343&quot;
+    &quot;first&quot;: &quot;https://gitlab.informatik.uni-bremen.de/anatolb1/ds_2024.git&quot;,
+    &quot;second&quot;: &quot;507191fd-78ec-4c41-b34d-f780ff79bb2c&quot;
   }
 }</component>
   <component name="ProjectColorInfo">{
@@ -62,24 +61,25 @@
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent">{
-  &quot;keyToString&quot;: {
-    &quot;Python.base_cleaning.executor&quot;: &quot;Run&quot;,
-    &quot;Python.heatmap.executor&quot;: &quot;Run&quot;,
-    &quot;Python.route_map.executor&quot;: &quot;Run&quot;,
-    &quot;RunOnceActivity.OpenProjectViewOnStart&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
-    &quot;SHARE_PROJECT_CONFIGURATION_FILES&quot;: &quot;true&quot;,
-    &quot;git-widget-placeholder&quot;: &quot;master&quot;,
-    &quot;node.js.detected.package.eslint&quot;: &quot;true&quot;,
-    &quot;node.js.detected.package.tslint&quot;: &quot;true&quot;,
-    &quot;node.js.selected.package.eslint&quot;: &quot;(autodetect)&quot;,
-    &quot;node.js.selected.package.tslint&quot;: &quot;(autodetect)&quot;,
-    &quot;nodejs_package_manager_path&quot;: &quot;npm&quot;,
-    &quot;settings.editor.selected.configurable&quot;: &quot;com.jetbrains.python.configuration.PyActiveSdkModuleConfigurable&quot;,
-    &quot;vue.rearranger.settings.migration&quot;: &quot;true&quot;
+  <component name="PropertiesComponent"><![CDATA[{
+  "keyToString": {
+    "Python.base_cleaning.executor": "Run",
+    "Python.heatmap.executor": "Run",
+    "Python.route_map.executor": "Run",
+    "Python.transfers.executor": "Run",
+    "RunOnceActivity.OpenProjectViewOnStart": "true",
+    "RunOnceActivity.ShowReadmeOnStart": "true",
+    "SHARE_PROJECT_CONFIGURATION_FILES": "true",
+    "git-widget-placeholder": "master",
+    "node.js.detected.package.eslint": "true",
+    "node.js.detected.package.tslint": "true",
+    "node.js.selected.package.eslint": "(autodetect)",
+    "node.js.selected.package.tslint": "(autodetect)",
+    "nodejs_package_manager_path": "npm",
+    "settings.editor.selected.configurable": "org.jetbrains.plugins.gitlab.GitLabSettingsConfigurable",
+    "vue.rearranger.settings.migration": "true"
   }
-}</component>
+}]]></component>
   <component name="RecentsManager">
     <key name="MoveFile.RECENT_KEYS">
       <recent name="C:\Users\Anatol\PycharmProjects\ds_2024\heatmap" />
@@ -89,7 +89,8 @@
   <component name="SharedIndexes">
     <attachedChunks>
       <set>
-        <option value="bundled-python-sdk-50da183f06c8-2887949eec09-com.jetbrains.pycharm.pro.sharedIndexes.bundled-PY-233.13135.95" />
+        <option value="bundled-js-predefined-1d06a55b98c1-0b3e54e931b4-JavaScript-PY-241.18034.82" />
+        <option value="bundled-python-sdk-975db3bf15a3-2767605e8bc2-com.jetbrains.pycharm.pro.sharedIndexes.bundled-PY-241.18034.82" />
       </set>
     </attachedChunks>
   </component>
@@ -107,6 +108,9 @@
       <workItem from="1718885557666" duration="6114000" />
       <workItem from="1718979077859" duration="12743000" />
       <workItem from="1719068824660" duration="1957000" />
+      <workItem from="1719073575275" duration="302000" />
+      <workItem from="1719313984598" duration="9880000" />
+      <workItem from="1719391970958" duration="786000" />
     </task>
     <task id="LOCAL-00001" summary="Initial commit">
       <option name="closed" value="true" />
@@ -116,7 +120,15 @@
       <option name="project" value="LOCAL" />
       <updated>1718031301085</updated>
     </task>
-    <option name="localTasksCounter" value="2" />
+    <task id="LOCAL-00002" summary="Destinations, calculating time is shit">
+      <option name="closed" value="true" />
+      <created>1719073683837</created>
+      <option name="number" value="00002" />
+      <option name="presentableId" value="LOCAL-00002" />
+      <option name="project" value="LOCAL" />
+      <updated>1719073683837</updated>
+    </task>
+    <option name="localTasksCounter" value="3" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -136,12 +148,14 @@
   <component name="VcsManagerConfiguration">
     <MESSAGE value="Initial commit" />
     <MESSAGE value="Basic heatmap done, pushed for review" />
-    <option name="LAST_COMMIT_MESSAGE" value="Basic heatmap done, pushed for review" />
+    <MESSAGE value="Destinations, calculating time is shit" />
+    <option name="LAST_COMMIT_MESSAGE" value="Destinations, calculating time is shit" />
   </component>
   <component name="com.intellij.coverage.CoverageDataManagerImpl">
-    <SUITE FILE_PATH="coverage/ds_2024$base_cleaning.coverage" NAME="base_cleaning Coverage Results" MODIFIED="1718986511265" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="true" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/cleaning" />
     <SUITE FILE_PATH="coverage/FlixBusProject$base_cleaning.coverage" NAME="base_cleaning Coverage Results" MODIFIED="1718537009703" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/cleaning" />
+    <SUITE FILE_PATH="coverage/Project$transfers.coverage" NAME="transfers Coverage Results" MODIFIED="1719322942587" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/transfers" />
     <SUITE FILE_PATH="coverage/ds_2024$heatmap.coverage" NAME="heatmap Coverage Results" MODIFIED="1719069011170" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="true" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/heatmap" />
+    <SUITE FILE_PATH="coverage/ds_2024$base_cleaning.coverage" NAME="base_cleaning Coverage Results" MODIFIED="1718986511265" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="true" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/cleaning" />
     <SUITE FILE_PATH="coverage/FlixBusProject$heatmap.coverage" NAME="heatmap Coverage Results" MODIFIED="1718890853465" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/cleaning" />
     <SUITE FILE_PATH="coverage/FlixBusProject$route_map.coverage" NAME="route_map Coverage Results" MODIFIED="1718538704699" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/cleaning" />
   </component>

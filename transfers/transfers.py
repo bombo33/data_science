@@ -246,21 +246,19 @@ map_.save('trips_and_transfers_map.html')
 """
 
 import pandas as pd
-import math
-from collections import deque, defaultdict
+import folium
 
 # Load data from the uploaded files
 agency = pd.read_csv('../gtfs/agency.txt')
 calendar = pd.read_csv('../gtfs/calendar.txt')
 calendar_dates = pd.read_csv('../gtfs/calendar_dates.txt')
 feed_info = pd.read_csv('../gtfs/feed_info.txt')
-routes = pd.read_csv('../gtfs/routes.txt')
-stops = pd.read_csv('../gtfs/stops.txt')
-stop_times = pd.read_csv('../gtfs/stop_times.txt')
+routes_df = pd.read_csv('../gtfs/routes.txt')
+stops_df = pd.read_csv('../gtfs/stops.txt')
+stop_times_df = pd.read_csv('../gtfs/stop_times.txt')
 transfers = pd.read_csv('../gtfs/transfers.txt')
-trips = pd.read_csv('../gtfs/trips.txt')
+trips_df = pd.read_csv('../gtfs/trips.txt')
 
-# Function to normalize times over 24 hours
 def normalize_time(t):
     if pd.isna(t):
         return t
@@ -268,81 +266,77 @@ def normalize_time(t):
     return pd.Timedelta(hours=h % 24, minutes=m, seconds=s) + pd.Timedelta(days=h // 24)
 
 # Normalize arrival_time and departure_time
-stop_times['arrival_time'] = stop_times['arrival_time'].apply(normalize_time)
-stop_times['departure_time'] = stop_times['departure_time'].apply(normalize_time)
+stop_times_df['arrival_time'] = stop_times_df['arrival_time'].apply(normalize_time)
+stop_times_df['departure_time'] = stop_times_df['departure_time'].apply(normalize_time)
 
-# Merge stop_times with stops to get stop locations
-stop_times_merged = pd.merge(stop_times, stops, on='stop_id')
+def find_directly_reachable_destinations_with_times(city_name, time_limit):
+    # Step 1: Identify stop ID(s) for the specified city
+    city_stops = stops_df[stops_df['stop_name'].str.contains(city_name, case=False, na=False)]
+    city_stop_ids = city_stops['stop_id'].tolist()
 
-# Merge trips with routes to get route information
-trips_merged = pd.merge(trips, routes, on='route_id')
+    # Step 2: Find trips containing the specified city
+    city_trips = stop_times_df[stop_times_df['stop_id'].isin(city_stop_ids)]
+    city_trip_ids = city_trips['trip_id'].tolist()
 
-# Merge stop_times with trips to get complete trip information
-trip_details = pd.merge(stop_times_merged, trips_merged, on='trip_id')
+    # Step 3: Determine subsequent stops and calculate travel and stop times
+    travel_times = []
+    stop_times = []
+
+    for trip_id in city_trip_ids:
+        trip_stop_times = stop_times_df[stop_times_df['trip_id'] == trip_id].sort_values('stop_sequence').reset_index(drop=True)
+        start_index = trip_stop_times[trip_stop_times['stop_id'].isin(city_stop_ids)].index[0]
+
+        cumulative_travel_time = pd.Timedelta(0)
+
+        for i in range(start_index + 1, len(trip_stop_times)):
+            prev_stop = trip_stop_times.iloc[i - 1]
+            current_stop = trip_stop_times.iloc[i]
+            travel_time = current_stop['arrival_time'] - prev_stop['departure_time']
+            cumulative_travel_time += travel_time
+
+            if cumulative_travel_time > time_limit:
+                break
+
+            travel_times.append((current_stop['stop_id'], cumulative_travel_time))
+            stop_time = current_stop['departure_time'] - current_stop['arrival_time']
+            stop_times.append((current_stop['stop_id'], stop_time))
+
+    # Get unique stop IDs for directly reachable destinations
+    reachable_stop_ids = list(set([stop[0] for stop in travel_times]))
+    reachable_stops_info = stops_df[stops_df['stop_id'].isin(reachable_stop_ids) & (~stops_df['stop_id'].isin(city_stop_ids))][['stop_id', 'stop_name', 'stop_lat', 'stop_lon']]
+
+    # Adding travel and stop times to the dataframe
+    travel_time_dict = dict(travel_times)
+    stop_time_dict = dict(stop_times)
+
+    reachable_stops_info['travel_time'] = reachable_stops_info['stop_id'].map(travel_time_dict)
+    reachable_stops_info['stop_time'] = reachable_stops_info['stop_id'].map(stop_time_dict)
+
+    return reachable_stops_info
+
+def visualize_reachable_destinations(city_name, reachable_stops_info):
+    # Get coordinates for the specified city
+    city_coords = stops_df[stops_df['stop_name'].str.contains(city_name, case=False, na=False)][['stop_lat', 'stop_lon']].values[0].tolist()
+
+    # Create a map centered around the specified city
+    map_city = folium.Map(location=city_coords, zoom_start=6)
+
+    # Add markers for directly reachable stops
+    for _, row in reachable_stops_info.iterrows():
+        stop_coords = [row['stop_lat'], row['stop_lon']]
+        popup_info = f"{row['stop_name']}<br>Travel Time: {row['travel_time']}"
+        folium.Marker(location=stop_coords, popup=popup_info).add_to(map_city)
+
+    map_path = f'directly_reachable_from_{city_name.lower()}_map.html'
+    map_city.save(map_path)
+
+    return map_path
+
+# Example usage:
+city_name = "Budapest"
+time_limit = pd.Timedelta(hours=5)  # Specify the time limit
+reachable_stops_info = find_directly_reachable_destinations_with_times(city_name, time_limit)
+visualize_reachable_destinations(city_name, reachable_stops_info)
 
 
-
-# Calculate travel times between stops on each trip
-def calculate_travel_times(stop_times):
-    stop_times = stop_times.sort_values(by=['trip_id', 'stop_sequence'])
-    stop_times['next_departure'] = stop_times.groupby('trip_id')['departure_time'].shift(-1)
-    stop_times['travel_time'] = (stop_times['next_departure'] - stop_times['departure_time']).dt.total_seconds() / 60
-    stop_times['travel_time'] = stop_times['travel_time'].fillna(0)  # Fill NaNs with 0 for the last stop in each trip
-    return stop_times
-
-stop_times = calculate_travel_times(stop_times)
-stop_times.to_csv('stop_times.csv', index=False)
-
-
-# Function to find direct destinations from a given set of stops
-def find_direct_destinations(starting_stops, trip_details, stop_times, max_travel_time=120):
-    stop_ids = starting_stops['stop_id'].tolist()
-    trip_ids = trip_details[trip_details['stop_id'].isin(stop_ids)]['trip_id'].unique()
-
-    direct_dest_stops = stop_times_merged[stop_times_merged['trip_id'].isin(trip_ids)][
-        ['trip_id', 'stop_id', 'stop_name', 'stop_lat', 'stop_lon', 'arrival_time', 'departure_time', 'stop_sequence']].drop_duplicates()
-
-    direct_dest_stops = direct_dest_stops[~direct_dest_stops['stop_id'].isin(stop_ids)]
-
-    direct_dest_travel_times = stop_times.groupby('trip_id')['travel_time'].sum().reset_index()
-    direct_dest_stops = pd.merge(direct_dest_stops, direct_dest_travel_times, on='trip_id')
-    direct_dest_stops = direct_dest_stops[direct_dest_stops['travel_time'] <= max_travel_time]
-    direct_dest_stops = direct_dest_stops.sort_values(by='travel_time')
-
-    direct_dest_stops = direct_dest_stops.sort_values(by='travel_time').drop_duplicates(subset='stop_id', keep='first')
-    return direct_dest_stops
-
-
-
-
-# Initial city stops
-city_name = 'Budapest Népliget'
-starting_stops = stops[stops['stop_name'].str.contains(city_name, case=False)]
-
-# Find direct destinations
-direct_dest_stops = find_direct_destinations(starting_stops, trip_details, stop_times, max_travel_time=2500)
-
-# Visualization on a map
-import folium
-from folium.plugins import MarkerCluster
-
-# Initialize the map centered around the given city
-city_coords = starting_stops[['stop_lat', 'stop_lon']].mean()
-map_ = folium.Map(location=[city_coords['stop_lat'], city_coords['stop_lon']], zoom_start=5)
-
-# Add marker cluster to handle multiple markers
-marker_cluster = MarkerCluster().add_to(map_)
-
-# Add direct destination stops to the map
-for _, stop in direct_dest_stops.iterrows():
-    travel_time_hours = math.ceil(stop['travel_time'] / 60)  # Convert travel time to hours and round up
-    popup_text = f"Stop: {stop['stop_name']}<br>Travel Time: {travel_time_hours} hours"
-    folium.Marker(
-        location=[stop['stop_lat'], stop['stop_lon']],
-        popup=popup_text,
-        icon=folium.Icon(color='blue', icon='info-sign')
-    ).add_to(marker_cluster)
-
-# Display the map
-map_.save('direct_trips_map.html')
 
