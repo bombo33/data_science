@@ -1,5 +1,7 @@
 import pandas as pd
 import folium
+from heapq import heappop, heappush
+from collections import defaultdict
 
 # Load data from the uploaded files
 agency = pd.read_csv('../gtfs/agency.txt')
@@ -24,102 +26,97 @@ def normalize_time(t):
 stop_times_df['arrival_time'] = stop_times_df['arrival_time'].apply(normalize_time)
 stop_times_df['departure_time'] = stop_times_df['departure_time'].apply(normalize_time)
 
+# Merge stop_times with stops to get stop information
+stop_times_df = stop_times_df.merge(stops_df, on='stop_id', how='left')
 
-def find_directly_reachable_destinations_with_times(city_name, time_limit):
+def find_reachable_destinations(city_name, time_limit, max_transfers):
     # Step 1: Identify stop ID(s) for the specified city
     city_stops = stops_df[stops_df['stop_name'].str.contains(city_name, case=False, na=False, regex=False)]
     city_stop_ids = city_stops['stop_id'].tolist()
 
-    # Step 2: Find trips containing the specified city
-    city_trips = stop_times_df[stop_times_df['stop_id'].isin(city_stop_ids)]
-    city_trip_ids = city_trips['trip_id'].tolist()
+    # Step 2: Initialize data structures
+    priority_queue = [(pd.Timedelta(0), 0, stop_id, city_name) for stop_id in city_stop_ids]
+    travel_times = defaultdict(lambda: pd.Timedelta.max)
+    transfer_counts = defaultdict(lambda: float('inf'))
+    explored_routes = defaultdict(set)
+    all_reachable_stops = pd.DataFrame(columns=['stop_id', 'stop_name', 'stop_lat', 'stop_lon', 'travel_time', 'transfer_count'])
 
-    # Step 3: Determine subsequent stops and calculate travel and stop times
-    travel_times = []
-    stop_times = []
+    for stop_id in city_stop_ids:
+        travel_times[(stop_id, 0)] = pd.Timedelta(0)
+        transfer_counts[(stop_id, 0)] = 0
 
-    for trip_id in city_trip_ids:
-        trip_stop_times = stop_times_df[stop_times_df['trip_id'] == trip_id].sort_values('stop_sequence').reset_index(drop=True)
-        start_index = trip_stop_times[trip_stop_times['stop_id'].isin(city_stop_ids)].index[0]
+    while priority_queue:
+        current_time, transfers, current_stop, origin_city = heappop(priority_queue)
 
-        cumulative_travel_time = pd.Timedelta(0)
+        if transfers > max_transfers or current_time > time_limit:
+            continue
 
-        for i in range(start_index + 1, len(trip_stop_times)):
-            prev_stop = trip_stop_times.iloc[i - 1]
-            current_stop = trip_stop_times.iloc[i]
-            travel_time = current_stop['arrival_time'] - prev_stop['departure_time']
-            cumulative_travel_time += travel_time
+        next_trips = stop_times_df[stop_times_df['stop_id'] == current_stop]['trip_id'].unique()
 
-            if cumulative_travel_time > time_limit:
-                break
+        for trip_id in next_trips:
+            if trip_id in explored_routes[origin_city]:
+                continue
+            explored_routes[origin_city].add(trip_id)
 
-            travel_times.append((current_stop['stop_id'], cumulative_travel_time))
-            stop_time = current_stop['departure_time'] - current_stop['arrival_time']
-            stop_times.append((current_stop['stop_id'], stop_time))
+            trip_stop_times = stop_times_df[stop_times_df['trip_id'] == trip_id].sort_values('stop_sequence').reset_index(drop=True)
+            start_index = trip_stop_times[trip_stop_times['stop_id'] == current_stop].index[0]
 
-    # Get unique stop IDs for directly reachable destinations
-    reachable_stop_ids = list(set([stop[0] for stop in travel_times]))
-    reachable_stops_info = stops_df[stops_df['stop_id'].isin(reachable_stop_ids) & (~stops_df['stop_id'].isin(city_stop_ids))][['stop_id', 'stop_name', 'stop_lat', 'stop_lon']]
+            cumulative_travel_time = current_time
 
-    # Adding travel and stop times to the dataframe
-    travel_time_dict = dict(travel_times)
-    stop_time_dict = dict(stop_times)
+            for i in range(start_index + 1, len(trip_stop_times)):
+                prev_stop = trip_stop_times.iloc[i - 1]
+                next_stop = trip_stop_times.iloc[i]
+                travel_time = next_stop['arrival_time'] - prev_stop['departure_time']
+                cumulative_travel_time += travel_time
 
-    reachable_stops_info['travel_time'] = reachable_stops_info['stop_id'].map(travel_time_dict)
-    reachable_stops_info['stop_time'] = reachable_stops_info['stop_id'].map(stop_time_dict)
+                if cumulative_travel_time > time_limit:
+                    break
 
-    return reachable_stops_info
+                next_stop_id = next_stop['stop_id']
+                if (next_stop_id, transfers) not in travel_times or cumulative_travel_time < travel_times[(next_stop_id, transfers)]:
+                    travel_times[(next_stop_id, transfers)] = cumulative_travel_time
+                    transfer_counts[(next_stop_id, transfers)] = transfers
+                    heappush(priority_queue, (cumulative_travel_time, transfers, next_stop_id, origin_city))
 
-# Example usage for directly reachable destinations:
+                    if transfers < max_transfers:
+                        heappush(priority_queue, (cumulative_travel_time, transfers + 1, next_stop_id, next_stop['stop_name']))
+
+                    if next_stop_id not in all_reachable_stops['stop_id'].values:
+                        all_reachable_stops = pd.concat([all_reachable_stops, pd.DataFrame({
+                            'stop_id': [next_stop_id],
+                            'stop_name': [next_stop['stop_name']],
+                            'stop_lat': [next_stop['stop_lat']],
+                            'stop_lon': [next_stop['stop_lon']],
+                            'travel_time': [cumulative_travel_time],
+                            'transfer_count': [transfers]
+                        })])
+        print(all_reachable_stops)
+
+    return all_reachable_stops
+
+
+# Example usage for multi-level reachable destinations:
 city_name = "Budapest"
+max_transfers = 0  # Specify the maximum number of transfers
 time_limit = pd.Timedelta(hours=5)  # Specify the time limit
-direct_reachable_stops_info = find_directly_reachable_destinations_with_times(city_name, time_limit)
+reachable_stops_info = find_reachable_destinations(city_name, time_limit, max_transfers)
 
-
-def find_second_level_reachable_destinations(direct_reachable_stops_info, time_limit):
-    second_level_destinations = pd.DataFrame()
-
-    for _, row in direct_reachable_stops_info.iterrows():
-        city_name = row['stop_name']
-        additional_travel_time = row['travel_time']
-        reachable_from_stop = find_directly_reachable_destinations_with_times(city_name,
-                                                                              time_limit - additional_travel_time)
-
-        if not reachable_from_stop.empty:
-            # Adjust travel times to include the initial travel time
-            reachable_from_stop['travel_time'] = reachable_from_stop['travel_time'].apply(
-                lambda x: x + additional_travel_time if pd.notnull(x) else x)
-
-            # Exclude cities that are already directly reachable from the starting city
-            reachable_from_stop = reachable_from_stop[
-                ~reachable_from_stop['stop_id'].isin(direct_reachable_stops_info['stop_id'])]
-            second_level_destinations = pd.concat([second_level_destinations, reachable_from_stop])
-
-    return second_level_destinations
-
-
-# Example usage for second-level reachable destinations:
-second_level_reachable_stops_info = find_second_level_reachable_destinations(direct_reachable_stops_info, time_limit)
-
-
-def visualize_reachable_destinations(city_name, direct_reachable_stops_info, second_level_reachable_stops_info):
+def visualize_reachable_destinations(city_name, reachable_stops_info):
     # Get coordinates for the specified city
     city_coords = stops_df[stops_df['stop_name'].str.contains(city_name, case=False, na=False, regex=False)][['stop_lat', 'stop_lon']].values[0].tolist()
 
     # Create a map centered around the specified city
     map_city = folium.Map(location=city_coords, zoom_start=6)
 
-    # Add markers for directly reachable stops
-    for _, row in direct_reachable_stops_info.iterrows():
+    # Add markers for reachable stops
+    for _, row in reachable_stops_info.iterrows():
         stop_coords = [row['stop_lat'], row['stop_lon']]
-        popup_info = f"Direct: {row['stop_name']}<br>Travel Time: {row['travel_time']}"
-        folium.Marker(location=stop_coords, popup=popup_info, icon=folium.Icon(color='green')).add_to(map_city)
-
-    # Add markers for second-level reachable stops
-    for _, row in second_level_reachable_stops_info.iterrows():
-        stop_coords = [row['stop_lat'], row['stop_lon']]
-        popup_info = f"Second-Level: {row['stop_name']}<br>Travel Time: {row['travel_time']}"
-        folium.Marker(location=stop_coords, popup=popup_info, icon=folium.Icon(color='blue')).add_to(map_city)
+        if row['transfer_count'] == 0:
+            popup_info = f"Direct: {row['stop_name']}<br>Travel Time: {row['travel_time']}"
+            folium.Marker(location=stop_coords, popup=popup_info, icon=folium.Icon(color='green')).add_to(map_city)
+        else:
+            popup_info = f"{row['transfer_count']} Transfers: {row['stop_name']}<br>Travel Time: {row['travel_time']}"
+            folium.Marker(location=stop_coords, popup=popup_info, icon=folium.Icon(color='blue')).add_to(map_city)
 
     map_path = f'all_reachable_from_{city_name.lower()}_map.html'
     map_city.save(map_path)
@@ -127,5 +124,4 @@ def visualize_reachable_destinations(city_name, direct_reachable_stops_info, sec
     return map_city
 
 # Example usage for visualization:
-map_city = visualize_reachable_destinations(city_name, direct_reachable_stops_info, second_level_reachable_stops_info)
-map_city
+map_city = visualize_reachable_destinations(city_name, reachable_stops_info)
