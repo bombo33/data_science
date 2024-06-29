@@ -3,6 +3,7 @@ import pandas as pd
 import folium
 from heapq import heappop, heappush
 from collections import defaultdict
+from tqdm import tqdm
 
 # Load data from the uploaded files
 agency = pd.read_csv('../gtfs/agency.txt')
@@ -31,10 +32,25 @@ stop_times_df['departure_time'] = stop_times_df['departure_time'].apply(normaliz
 stop_times_df = stop_times_df.merge(stops_df, on='stop_id', how='left')
 
 
-def find_reachable_destinations(city_name, time_limit, max_transfers):
+def get_time_interval(interval):
+    intervals = {
+        'early_morning': (pd.Timedelta(hours=0), pd.Timedelta(hours=6)),
+        'morning': (pd.Timedelta(hours=6), pd.Timedelta(hours=10)),
+        'midday': (pd.Timedelta(hours=10), pd.Timedelta(hours=14)),
+        'afternoon': (pd.Timedelta(hours=14), pd.Timedelta(hours=18)),
+        'late_afternoon': (pd.Timedelta(hours=18), pd.Timedelta(hours=21)),
+        'night': (pd.Timedelta(hours=21), pd.Timedelta(hours=24))
+    }
+    return intervals.get(interval, (pd.Timedelta(hours=0), pd.Timedelta(hours=24)))
+
+
+def find_reachable_destinations(city_name, time_limit, max_transfers, time_interval=None):
+    print("Starting process to find reachable destinations...")
+
     # Step 1: Identify stop ID(s) for the specified city
     city_stops = stops_df[stops_df['stop_name'].str.contains(city_name, case=False, na=False, regex=False)]
     city_stop_ids = city_stops['stop_id'].tolist()
+    print(f"City stops for {city_name}: {city_stop_ids}")
 
     # Step 2: Initialize data structures
     priority_queue = [(pd.Timedelta(0), 0, stop_id, None) for stop_id in city_stop_ids]
@@ -48,6 +64,8 @@ def find_reachable_destinations(city_name, time_limit, max_transfers):
         travel_times[(stop_id, 0)] = pd.Timedelta(0)
         transfer_counts[(stop_id, 0)] = 0
 
+    trips_found = False
+
     while priority_queue:
         current_time, transfers, current_stop, prev_trip_id = heappop(priority_queue)
 
@@ -56,7 +74,7 @@ def find_reachable_destinations(city_name, time_limit, max_transfers):
 
         next_trips = stop_times_df[stop_times_df['stop_id'] == current_stop]['trip_id'].unique()
 
-        for trip_id in next_trips:
+        for trip_id in tqdm(next_trips, desc="Processing trips"):
             if trip_id in explored_routes[prev_trip_id]:
                 continue
             explored_routes[prev_trip_id].add(trip_id)
@@ -78,6 +96,18 @@ def find_reachable_destinations(city_name, time_limit, max_transfers):
 
                 next_stop_id = next_stop['stop_id']
                 next_transfers = transfers if trip_id == prev_trip_id else transfers + 1
+
+                # Filter trips by desired time interval
+                if time_interval is not None:
+                    interval_start, interval_end = get_time_interval(time_interval)
+                    if not (interval_start <= prev_stop['departure_time'] < interval_end):
+                        continue
+
+                trips_found = True
+
+                if next_stop_id in city_stop_ids:
+                    continue  # Skip adding the starting city's stops
+
                 if (next_stop_id, next_transfers) not in travel_times or cumulative_travel_time < travel_times[
                     (next_stop_id, next_transfers)]:
                     travel_times[(next_stop_id, next_transfers)] = cumulative_travel_time
@@ -94,16 +124,22 @@ def find_reachable_destinations(city_name, time_limit, max_transfers):
                                 'travel_time': [cumulative_travel_time],
                                 'transfer_count': [next_transfers - 1]
                             })])
-        print(all_reachable_stops)
 
+    if not trips_found:
+        print("No trips found for the specified time interval.")
+    else:
+        print("Finished processing all stops.")
+
+    print(all_reachable_stops)
     return all_reachable_stops
 
 
 # Example usage for multi-level reachable destinations:
 city_name = "Budapest"
 max_transfers = 1  # Specify the maximum number of transfers
-time_limit = pd.Timedelta(hours=5)  # Specify the time limit
-reachable_stops_info = find_reachable_destinations(city_name, time_limit, max_transfers)
+time_limit = pd.Timedelta(hours=6)  # Specify the time limit
+time_interval = 'night'  # Specify the desired time interval
+reachable_stops_info = find_reachable_destinations(city_name, time_limit, max_transfers, time_interval)
 
 
 def visualize_reachable_destinations(city_name, reachable_stops_info):
