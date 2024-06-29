@@ -3,10 +3,86 @@ import streamlit as st
 import pandas as pd
 import folium
 from streamlit_folium import st_folium
-from folium.plugins import MarkerCluster
+import folium.plugins as plugins
+import branca.colormap as cm
+from matplotlib.colors import to_rgba
+import numpy as np
 
-# Set page config at the beginning
+def interpolate_color(color1, color2, fraction):
+    rgba1 = np.array(to_rgba(color1))
+    rgba2 = np.array(to_rgba(color2))
+    interpolated_rgba = rgba1 + (rgba2 - rgba1) * fraction
+    return '#{:02x}{:02x}{:02x}'.format(
+        int(interpolated_rgba[0] * 255),
+        int(interpolated_rgba[1] * 255),
+        int(interpolated_rgba[2] * 255)
+    )
+
 st.set_page_config(layout="wide")
+
+# Capture scroll position using JavaScript and store it in session storage
+st.markdown("""
+    <script>
+    function storeScroll() {
+        var scrollPosition = window.pageYOffset || document.documentElement.scrollTop;
+        window.sessionStorage.setItem("scrollPosition", scrollPosition);
+    }
+    window.onscroll = storeScroll;
+    </script>
+""", unsafe_allow_html=True)
+
+# Retrieve scroll position from session storage and set it on page load
+st.markdown(f"""
+    <script>
+    window.onload = function() {{
+        var scrollPosition = window.sessionStorage.getItem("scrollPosition");
+        if (scrollPosition !== null) {{
+            window.scrollTo(0, parseInt(scrollPosition));
+        }}
+    }}
+    </script>
+""", unsafe_allow_html=True)
+
+# Set base directory
+base_dir = os.path.dirname(os.path.abspath(__file__))
+
+precomputed_data_path = os.path.join(base_dir, 'precomputed_routes.csv')
+
+def get_color(travel_time_hours, min_hours, max_hours):
+    colormap = cm.linear.YlOrRd_09.scale(min_hours, max_hours)
+    return colormap(travel_time_hours)
+
+
+def get_legend_html(min_hours, max_hours, width=1200):
+    intervals = [min_hours + (i * (max_hours - min_hours) / 9) for i in range(10)]
+    colors = [get_color(interval, min_hours, max_hours) for interval in intervals]
+
+    gradient_css = "background: linear-gradient(to right, " + ", ".join(colors) + ");"
+
+    labels_html = "".join(
+        f'<div style="flex: 1; text-align: center; font-size: 14px;">{interval:.1f}</div>'
+        for interval in intervals
+    )
+
+    legend_html = f"""
+    <div style="display: flex; flex-direction: column; align-items: center; padding: 3px; border: 1px solid black; border-radius: 3px; box-shadow: 0 0 10px rgba(0, 0, 0, 0.2); width: {width}px; background-color: black;">
+        <h4 style="margin: 0 0 1px 0; font-size: 14px; color: white;">Travel Time (hours)</h4>
+        <div style="display: flex; width: 100%; height: 8px; {gradient_css}; margin-bottom: 2px;"></div>
+        <div style="display: flex; width: 100%; font-size: 14px; color: white;">{labels_html}</div>
+    </div>
+    """
+    return legend_html
+
+
+@st.cache_data
+def load_precomputed_data():
+    data = pd.read_csv(precomputed_data_path)
+    # Convert travel_time to numeric (in hours), errors='coerce' will convert non-numeric values to NaN
+    data['travel_time_hours'] = pd.to_timedelta(data['travel_time']).dt.total_seconds() / 3600
+    return data
+
+
+precomputed_routes = load_precomputed_data()
 
 # Set base directory
 base_dir = os.path.dirname(os.path.abspath(__file__))
@@ -14,166 +90,286 @@ base_dir = os.path.dirname(os.path.abspath(__file__))
 # Construct file paths
 stops_path = os.path.join(base_dir, '..', 'gtfs', 'stops.txt')
 stop_times_path = os.path.join(base_dir, '..', 'gtfs', 'stop_times.txt')
-agency_path = os.path.join(base_dir, '..', 'gtfs', 'agency.txt')
-calendar_path = os.path.join(base_dir, '..', 'gtfs', 'calendar.txt')
-calendar_dates_path = os.path.join(base_dir, '..', 'gtfs', 'calendar_dates.txt')
-feed_info_path = os.path.join(base_dir, '..', 'gtfs', 'feed_info.txt')
-routes_path = os.path.join(base_dir, '..', 'gtfs', 'routes.txt')
-transfers_path = os.path.join(base_dir, '..', 'gtfs', 'transfers.txt')
-trips_path = os.path.join(base_dir, '..', 'gtfs', 'trips.txt')
 
-# Load data from the uploaded files
+
+# Load GTFS data
 @st.cache_data
-def load_data():
-    agency = pd.read_csv(agency_path)
-    calendar = pd.read_csv(calendar_path)
-    calendar_dates = pd.read_csv(calendar_dates_path)
-    feed_info = pd.read_csv(feed_info_path)
-    routes_df = pd.read_csv(routes_path)
+def load_gtfs_data():
     stops_df = pd.read_csv(stops_path)
     stop_times_df = pd.read_csv(stop_times_path)
-    transfers = pd.read_csv(transfers_path)
-    trips_df = pd.read_csv(trips_path)
-    return stops_df, stop_times_df, routes_df
+    return stops_df, stop_times_df
 
-stops_df, stop_times_df, routes_df = load_data()
 
-def normalize_time(t):
-    if pd.isna(t):
-        return t
-    h, m, s = map(int, t.split(':'))
-    return pd.Timedelta(hours=h % 24, minutes=m, seconds=s) + pd.Timedelta(days=h // 24)
+stops_df, stop_times_df = load_gtfs_data()
 
-# Normalize arrival_time and departure_time
-stop_times_df['arrival_time'] = stop_times_df['arrival_time'].apply(normalize_time)
-stop_times_df['departure_time'] = stop_times_df['departure_time'].apply(normalize_time)
+# Calculate the number of trips servicing each stop
+trip_frequencies = stop_times_df['stop_id'].value_counts().reset_index()
+trip_frequencies.columns = ['stop_id', 'trip_count']
 
-def find_directly_reachable_destinations_with_times(city_name, time_limit):
-    # Step 1: Identify stop ID(s) for the specified city
-    city_stops = stops_df[stops_df['stop_name'].str.contains(city_name, case=False, na=False)]
-    if city_stops.empty:
-        return pd.DataFrame()  # Return an empty DataFrame if no stops are found
-
-    city_stop_ids = city_stops['stop_id'].tolist()
-
-    # Step 2: Find trips containing the specified city
-    city_trips = stop_times_df[stop_times_df['stop_id'].isin(city_stop_ids)]
-    city_trip_ids = city_trips['trip_id'].tolist()
-
-    # Step 3: Determine subsequent stops and calculate travel and stop times
-    travel_times = []
-    stop_times = []
-
-    for trip_id in city_trip_ids:
-        trip_stop_times = stop_times_df[stop_times_df['trip_id'] == trip_id].sort_values('stop_sequence').reset_index(drop=True)
-        start_index = trip_stop_times[trip_stop_times['stop_id'].isin(city_stop_ids)].index[0]
-
-        cumulative_travel_time = pd.Timedelta(0)
-
-        for i in range(start_index + 1, len(trip_stop_times)):
-            prev_stop = trip_stop_times.iloc[i - 1]
-            current_stop = trip_stop_times.iloc[i]
-            travel_time = current_stop['arrival_time'] - prev_stop['departure_time']
-            cumulative_travel_time += travel_time
-
-            if cumulative_travel_time > time_limit:
-                break
-
-            travel_times.append((current_stop['stop_id'], cumulative_travel_time))
-            stop_time = current_stop['departure_time'] - current_stop['arrival_time']
-            stop_times.append((current_stop['stop_id'], stop_time))
-
-    # Get unique stop IDs for directly reachable destinations
-    reachable_stop_ids = list(set([stop[0] for stop in travel_times]))
-    reachable_stops_info = stops_df[stops_df['stop_id'].isin(reachable_stop_ids) & (~stops_df['stop_id'].isin(city_stop_ids))][['stop_id', 'stop_name', 'stop_lat', 'stop_lon']]
-
-    # Adding travel and stop times to the dataframe
-    travel_time_dict = dict(travel_times)
-    stop_time_dict = dict(stop_times)
-
-    reachable_stops_info['travel_time'] = reachable_stops_info['stop_id'].map(travel_time_dict)
-    reachable_stops_info['stop_time'] = reachable_stops_info['stop_id'].map(stop_time_dict)
-
-    # Convert Timedelta columns to string
-    reachable_stops_info['travel_time'] = reachable_stops_info['travel_time'].astype(str)
-    reachable_stops_info['stop_time'] = reachable_stops_info['stop_time'].astype(str)
-
-    return reachable_stops_info
-
-def visualize_reachable_destinations(city_name, reachable_stops_info):
-    if reachable_stops_info.empty:
-        st.warning("No stops found for the specified city.")
-        return None
-
-    # Get coordinates for the specified city
-    city_coords = stops_df[stops_df['stop_name'].str.contains(city_name, case=False, na=False)][['stop_lat', 'stop_lon']].values[0].tolist()
-
-    # Create a map centered around the specified city
-    map_city = folium.Map(location=city_coords, zoom_start=6)
-
-    # Add markers for directly reachable stops
-    for _, row in reachable_stops_info.iterrows():
-        stop_coords = [row['stop_lat'], row['stop_lon']]
-        popup_info = f"{row['stop_name']}<br>Travel Time: {row['travel_time']}"
-        folium.Marker(location=stop_coords, popup=popup_info, tooltip=row['stop_id']).add_to(map_city)
-
-    return map_city
+# Merge the frequencies with the stops data
+stops_with_frequencies = pd.merge(stops_df, trip_frequencies, on='stop_id', how='left')
+stops_with_frequencies['trip_count'] = stops_with_frequencies['trip_count'].fillna(0)
 
 # Streamlit interface
 st.title("Trip and Transfer Visualization")
 
-# Input for city name and time limit
-city_name = st.text_input("Enter a city name:", "Budapest")
-time_limit_hours = st.number_input("Enter the time limit in hours:", min_value=1, max_value=24, value=5)
-time_limit = pd.Timedelta(hours=time_limit_hours)
+# Input for city name, max travel hours, max changes, and min trip frequency
+with st.container():
+    col_filter1, col_filter2, col_filter3, col_filter4 = st.columns(4)
+
+    with col_filter1:
+        city_name = st.text_input("Enter a starting city name:", "Budapest")
+    with col_filter2:
+        max_travel_hours = st.number_input("Enter the max travel hours:", min_value=1, max_value=8, value=5)
+    with col_filter3:
+        max_changes = st.number_input("Enter the max number of changes:", min_value=0, max_value=3, value=1)
+    with col_filter4:
+        min_trip_frequency = st.number_input("Enter the minimum trip frequency:", min_value=1, value=5)
+
+
+# Filter precomputed data based on inputs
+def get_reachable_stops(city_name, max_travel_hours, max_changes, min_trip_frequency):
+    st.write(
+        f"Filtering data for city: {city_name}, max travel hours: {max_travel_hours}, max changes: {max_changes}, min trip frequency: {min_trip_frequency}")
+
+    # Filter for the specified starting city
+    city_stops = stops_df[stops_df['stop_name'].str.contains(city_name, case=False, na=False)]
+    city_stop_ids = city_stops['stop_id'].tolist()
+
+    # Find trips that contain the specified city stops
+    city_trips = stop_times_df[stop_times_df['stop_id'].isin(city_stop_ids)]
+    city_trip_ids = city_trips['trip_id'].unique()
+
+    # Filter stop times for these trips
+    filtered_stop_times = stop_times_df[stop_times_df['trip_id'].isin(city_trip_ids)]
+
+    # Calculate the frequency of each stop in these trips
+    trip_frequencies = filtered_stop_times['stop_id'].value_counts().reset_index()
+    trip_frequencies.columns = ['stop_id', 'trip_count']
+
+    # Merge frequencies with stops data
+    stops_with_frequencies = pd.merge(stops_df, trip_frequencies, on='stop_id', how='left')
+    stops_with_frequencies['trip_count'] = stops_with_frequencies['trip_count'].fillna(0)
+
+    # Filter by minimum trip frequency
+    filtered_stops = stops_with_frequencies[stops_with_frequencies['trip_count'] >= min_trip_frequency]
+
+    # Filter precomputed data to include only stops that meet the frequency criteria
+    precomputed_filtered = precomputed_routes[
+        (precomputed_routes['origin_city'].str.contains(city_name, case=False, na=False)) &
+        (precomputed_routes['travel_time_hours'] <= max_travel_hours) &
+        (precomputed_routes['transfer_count'] <= max_changes) &
+        (precomputed_routes['stop_id'].isin(filtered_stops['stop_id']))
+        ]
+
+    # Add the trip_count information to the precomputed_filtered DataFrame
+    precomputed_filtered = precomputed_filtered.merge(filtered_stops[['stop_id', 'trip_count']], on='stop_id',
+                                                      how='left')
+
+    # Extract city names from stop names
+    precomputed_filtered['city'] = precomputed_filtered['stop_name'].str.split().str[0]
+
+    # Sort by city and travel_time_hours, and then drop duplicates
+    precomputed_filtered = precomputed_filtered.sort_values(by=['city', 'travel_time_hours']).drop_duplicates(
+        subset=['city'], keep='first')
+
+    st.write(f"Filtered data size: {precomputed_filtered.shape[0]} rows")
+    return precomputed_filtered
+
 
 # Button to trigger fetching of data
 if st.button("Find Trips"):
-    reachable_stops_info = find_directly_reachable_destinations_with_times(city_name, time_limit)
+    reachable_stops_info = get_reachable_stops(city_name, max_travel_hours, max_changes, min_trip_frequency)
+    st.write("Reachable stops info:", reachable_stops_info)
     st.session_state['reachable_stops_info'] = reachable_stops_info
-    map_city = visualize_reachable_destinations(city_name, reachable_stops_info)
-    st.session_state['map_city'] = map_city
     st.session_state['selected_trip'] = None
+    st.rerun()
 else:
     reachable_stops_info = st.session_state.get('reachable_stops_info', pd.DataFrame())
-    map_city = st.session_state.get('map_city', None)
+
+# Retrieve selected_trip_id from query params
+selected_trip_id = st.query_params.get('selected_trip_id', [None])[0]
+
+# Set selected_trip based on selected_trip_id from query params
+if selected_trip_id and selected_trip_id in reachable_stops_info['stop_id'].values:
+    selected_trip = reachable_stops_info[reachable_stops_info['stop_id'] == selected_trip_id].iloc[0]
+    st.session_state['selected_trip'] = selected_trip
+else:
+    selected_trip = st.session_state.get('selected_trip', None)
 
 # Display the map and trip list with details box
-col1, col2 = st.columns([2, 1])
+col1, col2, col3 = st.columns([2, 1, 1])
+
+
+def visualize_reachable_destinations(reachable_stops_info, start_coords=None, selected_trip=None):
+    if reachable_stops_info.empty:
+        st.warning("No stops found for the specified city.")
+        return None
+
+    stop_name_to_id = dict(zip(reachable_stops_info['stop_name'], reachable_stops_info['stop_id']))
+    query_params = st.query_params
+    if selected_trip is not None:
+        end_coords = [selected_trip['stop_lat'], selected_trip['stop_lon']]
+        center = [(start_coords[0] + end_coords[0]) / 2, (start_coords[1] + end_coords[1]) / 2]
+    elif 'map_center_lat' in query_params and 'map_center_lon' in query_params:
+        center = [float(query_params['map_center_lat']), float(query_params['map_center_lon'])]
+    else:
+        center = start_coords
+
+    map_city = folium.Map(location=center, zoom_start=6, tiles='CartoDB positron')
+    min_hours = reachable_stops_info['travel_time_hours'].min()
+    max_hours = reachable_stops_info['travel_time_hours'].max()
+
+    # Add a distinct marker for the starting city
+    folium.Marker(
+        location=start_coords,
+        icon=folium.Icon(color='green', icon='star'),
+        tooltip='Start City'
+    ).add_to(map_city)
+
+    # Add markers for directly reachable stops
+    for _, row in reachable_stops_info.iterrows():
+        stop_coords = [row['stop_lat'], row['stop_lon']]
+        color = get_color(row['travel_time_hours'], min_hours, max_hours)
+        if selected_trip is not None and row['stop_id'] == selected_trip['stop_id']:
+            # Draw a gradient line between start and selected destination
+            num_segments = 20
+            for i in range(num_segments):
+                fraction = i / num_segments
+                segment_color = interpolate_color(get_color(min_hours, min_hours, max_hours), color, fraction)
+                intermediate_point = [
+                    start_coords[0] + fraction * (stop_coords[0] - start_coords[0]),
+                    start_coords[1] + fraction * (stop_coords[1] - start_coords[1])
+                ]
+                next_fraction = (i + 1) / num_segments
+                next_point = [
+                    start_coords[0] + next_fraction * (stop_coords[0] - start_coords[0]),
+                    start_coords[1] + next_fraction * (stop_coords[1] - start_coords[1])
+                ]
+                folium.PolyLine(
+                    locations=[intermediate_point, next_point],
+                    color=segment_color,
+                    weight=3,
+                    opacity=0.8
+                ).add_to(map_city)
+
+            # Highlight the selected destination
+            folium.CircleMarker(
+                location=stop_coords,
+                radius=10,  # Increased radius size for selected trip
+                color='darkgreen',  # Dark green highlight color for selected trip
+                weight=3,  # Outline thickness for selected trip
+                fill=True,
+                fill_color=color,
+                fill_opacity=1,  # Full opacity for selected trip
+                tooltip=row['stop_name']  # Set tooltip to stop_name
+            ).add_to(map_city)
+        else:
+            folium.CircleMarker(
+                location=stop_coords,
+                radius=5,  # Reduced radius size
+                color='black',  # Outline color
+                weight=1,  # Outline thickness
+                fill=True,
+                fill_color=color,
+                fill_opacity=0.6,
+                tooltip=row['stop_name']  # Set tooltip to stop_name
+            ).add_to(map_city)
+
+    plugins.Fullscreen().add_to(map_city)
+
+    return map_city, stop_name_to_id
+
 
 with col1:
-    if map_city:
-        st_data = st_folium(map_city, width=900, height=700, returned_objects=["last_object_clicked"])
+    if not reachable_stops_info.empty:
+        # Generate legend HTML
+        min_hours = reachable_stops_info['travel_time_hours'].min()
+        max_hours = max_travel_hours  # use the input max_travel_hours to limit the legend
+        legend_html = get_legend_html(min_hours, max_hours, width=865)
 
-        # Capture click event from the map
-        if "last_object_clicked" in st_data and st_data["last_object_clicked"] is not None:
-            if "tooltip" in st_data["last_object_clicked"]:
-                clicked_stop_id = st_data["last_object_clicked"]["tooltip"]
-                selected_trip = reachable_stops_info[reachable_stops_info['stop_id'] == clicked_stop_id].iloc[0]
-                st.session_state['selected_trip'] = selected_trip
+        # Display legend
+        st.markdown(legend_html, unsafe_allow_html=True)
 
-# Display details box
-if 'selected_trip' in st.session_state and st.session_state['selected_trip'] is not None:
-    selected_trip = st.session_state['selected_trip']
-    st.write("### Selected Trip Details")
-    st.markdown(f"""
-        **Stop Name:** {selected_trip['stop_name']}  
-        **Stop Latitude:** {selected_trip['stop_lat']}  
-        **Stop Longitude:** {selected_trip['stop_lon']}  
-        **Travel Time:** {selected_trip['travel_time']}  
-        **Stop Time:** {selected_trip['stop_time']}
-    """)
+        # Determine the start coordinates from the city name
+        start_coords = stops_df[stops_df['stop_name'].str.contains(city_name, case=False, na=False)]
+        if not start_coords.empty:
+            start_coords = [start_coords.iloc[0]['stop_lat'], start_coords.iloc[0]['stop_lon']]
+
+        selected_trip = st.session_state.get('selected_trip', None)
+        map_city, stop_name_to_id = visualize_reachable_destinations(reachable_stops_info, start_coords=start_coords,
+                                                    selected_trip=selected_trip)
+        if map_city:
+            st_data = st_folium(map_city, width=865, height=500, returned_objects=["last_object_clicked", "last_object_clicked_tooltip"])
+
+            # Capture click event from the map
+            if st_data and "last_object_clicked_tooltip" in st_data:
+                clicked_stop_name = st_data["last_object_clicked_tooltip"]
+                clicked_stop_id = stop_name_to_id.get(clicked_stop_name, None)
+                if clicked_stop_id and (st.session_state.get('selected_trip_id') != clicked_stop_id):
+                    if clicked_stop_id in reachable_stops_info['stop_id'].values:
+                        selected_trip = reachable_stops_info[reachable_stops_info['stop_id'] == clicked_stop_id].iloc[0]
+                        st.session_state['selected_trip'] = selected_trip
+                        st.session_state['selected_trip_id'] = clicked_stop_id
+                        # Set the scroll position in the session state
+                        st.session_state['scroll_position'] = st.session_state.get('scroll_position', 0)
+                        st.query_params.update({
+                            'map_center_lat': selected_trip['stop_lat'],
+                            'map_center_lon': selected_trip['stop_lon'],
+                            'scroll_position': st.session_state['scroll_position'],
+                            'selected_trip_id': clicked_stop_id  # Add selected_trip_id to query params
+                        })
+                        st.rerun()
 
 with col2:
     if not reachable_stops_info.empty:
         st.write("## List of Trips")
+
+        # Define the trip list
         trip_list = reachable_stops_info[['stop_name', 'travel_time']].reset_index(drop=True)
 
-        # Capture click event from the list
-        def display_trip_details(row):
-            st.session_state['selected_trip'] = reachable_stops_info.loc[row.name]
-            return None
+        # Search input
+        search_term = st.text_input("Search trips", "")
 
-        for idx, row in trip_list.iterrows():
-            if st.button(row['stop_name'], key=row['stop_name']):
-                display_trip_details(row)
+        # Filter the trip list based on the search term
+        if search_term:
+            filtered_trip_list = trip_list[trip_list['stop_name'].str.contains(search_term, case=False)]
+        else:
+            filtered_trip_list = trip_list
+
+        # Create a scrollable container for the list of trips
+        with st.container(height=430):
+
+            # Capture click event from the list
+            def display_trip_details(idx):
+                selected_trip = reachable_stops_info.iloc[idx]
+                st.session_state['selected_trip'] = selected_trip
+                st.session_state['selected_trip_id'] = selected_trip['stop_id']
+                st.session_state['map_center'] = [selected_trip['stop_lat'], selected_trip['stop_lon']]
+                # Set the scroll position in the session state
+                st.session_state['scroll_position'] = st.query_params.get('scroll_position', 0)
+                st.query_params.update({
+                    'map_center_lat': selected_trip['stop_lat'],
+                    'map_center_lon': selected_trip['stop_lon'],
+                    'scroll_position': st.session_state['scroll_position']
+                })
+                st.rerun()  # Force rerun to update map immediately
+
+
+            for idx, row in filtered_trip_list.iterrows():
+                if st.button(row['stop_name'], key=f"{row['stop_name']}_{idx}"):
+                    display_trip_details(idx)
+
+with col3:
+    # Display details box
+    if 'selected_trip' in st.session_state and st.session_state['selected_trip'] is not None:
+        selected_trip = st.session_state['selected_trip']
+        st.write("### Selected Trip Details")
+        st.markdown(f"""
+            **Stop Name:** {selected_trip['stop_name']}  
+            **Stop Latitude:** {selected_trip['stop_lat']}  
+            **Stop Longitude:** {selected_trip['stop_lon']}  
+            **Travel Time:** {selected_trip['travel_time']}  
+            **Number of Changes:** {selected_trip['transfer_count']}  
+            **Trip Frequency:** {selected_trip['trip_count']}
+        """)
