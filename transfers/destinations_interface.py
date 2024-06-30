@@ -113,7 +113,6 @@ def destinations_interface_main():
     stops_path = os.path.join(base_dir, '..', 'gtfs', 'stops.txt')
     stop_times_path = os.path.join(base_dir, '..', 'gtfs', 'stop_times.txt')
 
-
     # Load GTFS data
     @st.cache_data
     def load_gtfs_data():
@@ -157,9 +156,6 @@ def destinations_interface_main():
 
     # Filter precomputed data based on inputs
     def get_reachable_stops(city_name, max_travel_hours, max_changes, time_interval):
-        st.write(
-            f"Filtering data for city: {city_name}, max travel hours: {max_travel_hours}, max changes: {max_changes}, time interval: {time_interval}")
-
         # Filter for the specified starting city
         city_stops = stops_df[stops_df['stop_name'].str.contains(city_name, case=False, na=False)]
         city_stop_ids = city_stops['stop_id'].tolist()
@@ -197,22 +193,29 @@ def destinations_interface_main():
         precomputed_filtered = precomputed_filtered.sort_values(by=['city', 'travel_time_hours']).drop_duplicates(
             subset=['city'], keep='first')
 
-        st.write(f"Filtered data size: {precomputed_filtered.shape[0]} rows")
-        return precomputed_filtered
+        # Check if data is found
+        has_data = not precomputed_filtered.empty
+
+        return precomputed_filtered, has_data
 
     # Button to trigger fetching of data
     if st.button("Find Trips"):
-        reachable_stops_info = get_reachable_stops(city_name, max_travel_hours, max_changes, time_interval)
-        st.write("Reachable stops info:", reachable_stops_info)
+        reachable_stops_info, has_data = get_reachable_stops(city_name, max_travel_hours, max_changes, time_interval)
         st.session_state['reachable_stops_info'] = reachable_stops_info
         st.session_state['selected_trip'] = None
         st.session_state['city_name'] = city_name
         st.session_state['max_travel_hours'] = max_travel_hours
         st.session_state['max_changes'] = max_changes
         st.session_state['time_interval'] = time_interval
+        st.session_state['has_data'] = has_data
         st.rerun()
     else:
         reachable_stops_info = st.session_state.get('reachable_stops_info', pd.DataFrame())
+        has_data = st.session_state.get('has_data', True)
+
+    # Display message if no data found
+    if not has_data:
+        st.warning("No trips found for the selected filters.")
 
     # Retrieve selected_trip_id from query params
     selected_trip_id = st.query_params.get('selected_trip_id', [None])[0]
