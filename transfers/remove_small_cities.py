@@ -6,7 +6,7 @@ import re
 base_dir = os.path.dirname(os.path.abspath(__file__))
 
 # Construct file paths
-stops_path = os.path.join(base_dir, '..', 'gtfs', 'cleaned_stops.txt')  # Use the cleaned file from Part 1
+stops_path = os.path.join(base_dir, '..', 'gtfs', 'cleaned_stops.txt')
 population_data_path = '../gtfs/geonames-all-cities-with-a-population-1000.csv'
 
 # Load cleaned primary stops data

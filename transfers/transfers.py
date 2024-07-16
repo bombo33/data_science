@@ -11,7 +11,7 @@ calendar = pd.read_csv('../gtfs/calendar.txt')
 calendar_dates = pd.read_csv('../gtfs/calendar_dates.txt')
 feed_info = pd.read_csv('../gtfs/feed_info.txt')
 routes_df = pd.read_csv('../gtfs/routes.txt')
-stops_df = pd.read_csv('../gtfs/cleaned_stops.txt')  # change to ../gtfs/cleaned_filtered_stops.txt' if you want to filter out small cities
+stops_df = pd.read_csv('../gtfs/cleaned_filtered_stops.txt')  # change to ../gtfs/cleaned_filtered_stops.txt' if you want to filter out small cities
 stop_times_df = pd.read_csv('../gtfs/stop_times.txt')
 transfers = pd.read_csv('../gtfs/transfers.txt')
 trips_df = pd.read_csv('../gtfs/trips.txt')
@@ -47,12 +47,12 @@ def get_time_interval(interval):
 def find_reachable_destinations(city_name, time_limit, max_transfers, time_interval=None):
     print("Starting process to find reachable destinations...")
 
-    # Step 1: Identify stop ID(s) for the specified city
+    # Identify stop ID(s) for the specified city
     city_stops = stops_df[stops_df['stop_name'].str.contains(city_name, case=False, na=False, regex=False)]
     city_stop_ids = city_stops['stop_id'].tolist()
     print(f"City stops for {city_name}: {city_stop_ids}")
 
-    # Step 2: Initialize data structures
+    # Initialize data structures
     priority_queue = [(pd.Timedelta(0), 0, stop_id, None) for stop_id in city_stop_ids]
     travel_times = defaultdict(lambda: pd.Timedelta.max)
     transfer_counts = defaultdict(lambda: float('inf'))
@@ -90,6 +90,11 @@ def find_reachable_destinations(city_name, time_limit, max_transfers, time_inter
                 next_stop = trip_stop_times.iloc[i]
                 travel_time = next_stop['arrival_time'] - prev_stop['departure_time']
                 cumulative_travel_time += travel_time
+
+                if prev_trip_id is not None and trip_id != prev_trip_id:
+                    # Add waiting time for transfer
+                    waiting_time = next_stop['departure_time'] - prev_stop['arrival_time']
+                    cumulative_travel_time += waiting_time
 
                 if cumulative_travel_time > time_limit:
                     break
@@ -134,11 +139,10 @@ def find_reachable_destinations(city_name, time_limit, max_transfers, time_inter
     return all_reachable_stops
 
 
-# Example usage for multi-level reachable destinations:
 city_name = "Budapest"
-max_transfers = 1  # Specify the maximum number of transfers
-time_limit = pd.Timedelta(hours=6)  # Specify the time limit
-time_interval = 'night'  # Specify the desired time interval
+max_transfers = 3
+time_limit = pd.Timedelta(hours=8)
+time_interval = None
 reachable_stops_info = find_reachable_destinations(city_name, time_limit, max_transfers, time_interval)
 
 
@@ -166,5 +170,4 @@ def visualize_reachable_destinations(city_name, reachable_stops_info):
     return map_city
 
 
-# Example usage for visualization:
 map_city = visualize_reachable_destinations(city_name, reachable_stops_info)
