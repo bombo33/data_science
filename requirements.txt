@@ -1,0 +1,10 @@
+branca==0.6.0
+folium==0.14.0
+geopandas==1.0.0
+matplotlib==3.8.0
+pandas==2.2.2
+plotly==5.9.0
+Shapely==2.0.5
+streamlit==1.36.0
+streamlit_folium==0.21.0
+tqdm==4.65.0
