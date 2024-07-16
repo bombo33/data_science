@@ -4,7 +4,7 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="44e0abe7-86a9-40bf-bd55-2e9f3bb343eb" name="Changes" comment="Final touches">
+    <list default="true" id="44e0abe7-86a9-40bf-bd55-2e9f3bb343eb" name="Changes" comment="requirements.txt added">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
@@ -126,7 +126,7 @@
       <workItem from="1719765831987" duration="2749000" />
       <workItem from="1720453474826" duration="1535000" />
       <workItem from="1721116655986" duration="1029000" />
-      <workItem from="1721117941389" duration="302000" />
+      <workItem from="1721117941389" duration="620000" />
     </task>
     <task id="LOCAL-00001" summary="Initial commit">
       <option name="closed" value="true" />
@@ -200,7 +200,15 @@
       <option name="project" value="LOCAL" />
       <updated>1721116994122</updated>
     </task>
-    <option name="localTasksCounter" value="10" />
+    <task id="LOCAL-00010" summary="requirements.txt added">
+      <option name="closed" value="true" />
+      <created>1721118475909</created>
+      <option name="number" value="00010" />
+      <option name="presentableId" value="LOCAL-00010" />
+      <option name="project" value="LOCAL" />
+      <updated>1721118475909</updated>
+    </task>
+    <option name="localTasksCounter" value="11" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -228,7 +236,8 @@
     <MESSAGE value="Filter stops by cities and cities by population. Transfer waiting times does not work yet" />
     <MESSAGE value="Filter by time of the day" />
     <MESSAGE value="Final touches" />
-    <option name="LAST_COMMIT_MESSAGE" value="Final touches" />
+    <MESSAGE value="requirements.txt added" />
+    <option name="LAST_COMMIT_MESSAGE" value="requirements.txt added" />
   </component>
   <component name="XDebuggerManager">
     <watches-manager>
@@ -239,7 +248,7 @@
   </component>
   <component name="com.intellij.coverage.CoverageDataManagerImpl">
     <SUITE FILE_PATH="coverage/Project$Doctests_in_common.coverage" NAME="Doctests in common Coverage Results" MODIFIED="1719501217561" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$USER_HOME$/anaconda3/lib/python3.11/site-packages/pandas/io" />
-    <SUITE FILE_PATH="coverage/Project$main_interface.coverage" NAME="main_interface Coverage Results" MODIFIED="1721116871330" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
+    <SUITE FILE_PATH="coverage/Project$main_interface.coverage" NAME="main_interface Coverage Results" MODIFIED="1721118215675" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
     <SUITE FILE_PATH="coverage/ds_2024$heatmap.coverage" NAME="heatmap Coverage Results" MODIFIED="1719069011170" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="true" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/heatmap" />
     <SUITE FILE_PATH="coverage/ds_2024$base_cleaning.coverage" NAME="base_cleaning Coverage Results" MODIFIED="1718986511265" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="true" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/cleaning" />
     <SUITE FILE_PATH="coverage/Project$remove_multiple_stops_from_cities.coverage" NAME="remove_multiple_stops_from_cities Coverage Results" MODIFIED="1719590886783" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/transfers" />
