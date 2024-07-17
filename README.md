@@ -1,6 +1,6 @@
 # Installing dependecies
 
-Before running the project, ensure all necessary Python packages are installed. You can do this by opening a terminal, moving to the projects folder where the ***requirements.txt*** file is located and the running:
+Before running the project, ensure all necessary Python packages are installed. You can do this by opening a terminal, moving to the projects folder where the ***requirements.txt*** file is located and then running:
 
 ```bash
 pip install -r requirements.txt
